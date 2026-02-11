@@ -5,6 +5,7 @@ from typing import BinaryIO
 
 from loguru import logger
 from sortedcontainers import SortedSet
+from sympy import denom
 
 from cs336_basics.constant.constant import ONE_BYTES_SIZE
 import regex as re
@@ -196,22 +197,29 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
         sorted_count.add((count, pair))
 
     def update_sorted_count(old_val, new_val):
+        # logger.debug(f"remove from sorted_count {old_val}")
         sorted_count.discard(old_val)
+        # logger.debug(f"Add into sorted_count {new_val}")
         sorted_count.add(new_val)
+        logger.debug(f"Current sorted_count {sorted_count}")
+
+        
 
     def update_pair(neighbor_node, origin_node, merged_node, old_pair, new_pair, is_left_neighbor):
         # delete old_piar pair TODO: what about count becomes 0.
-
+        logger.debug(f"Current sorted_count {sorted_count}")
         sorted_count.remove((byte_pair_count[old_pair], old_pair))
-        logger.debug(f"remove from sorted_count {(byte_pair_count[old_pair], old_pair)}")
-        byte_pair_count[old_pair] -= node_l.count
+        # logger.debug(f"remove from sorted_count {(byte_pair_count[old_pair], old_pair)}")
+        byte_pair_count[old_pair] -= merged_node.count
         if is_left_neighbor:
             byte_pair_index[old_pair].remove((neighbor_node, origin_node))
         else:
             byte_pair_index[old_pair].remove((origin_node, neighbor_node))
 
         sorted_count.add((byte_pair_count[old_pair], old_pair))
-        logger.debug(f"Add into sorted_count {(byte_pair_count[old_pair], old_pair)}")
+        # logger.debug(f"Add into sorted_count {(byte_pair_count[old_pair], old_pair)}")
+        logger.debug(f"Current sorted_count {sorted_count}")
+        
         # add new_pair
         if new_pair not in byte_pair_index:
             byte_pair_index[new_pair] = []
@@ -225,11 +233,12 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
         # NOTE: Since we are updating sorted_count, we need first to remove
         # and then add.
         sorted_count.discard((new_pair_count, new_pair))
-        logger.debug(f"remove from sorted_count {(new_pair_count, new_pair)}")
+        # logger.debug(f"remove from sorted_count {(new_pair_count, new_pair)}")
 
-        byte_pair_count[new_pair] = new_pair_count + node_l.count
+        byte_pair_count[new_pair] = new_pair_count + merged_node.count
         sorted_count.add((byte_pair_count[new_pair], new_pair))
-        logger.debug(f"Add into sorted_count {(byte_pair_count[new_pair], new_pair)}")
+        # logger.debug(f"Add into sorted_count {(byte_pair_count[new_pair], new_pair)}")
+        logger.debug(f"Current sorted_count {sorted_count}")
 
     for merge_index in range(merge_times):
         # logger.debug(f"Current byte_pair_map {byte_pair_count}")
@@ -275,32 +284,29 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
                 continue
 
             # Change one of node_l and node_r into merged_node
-            merged_node = Node(merged_bytes, node_l.count)
+            merged_node = node_r # no copy, just a reference.
+            merged_node.val = merged_bytes
             merged_node.prev = node_l.prev
-            merged_node.next = node_r.next
             if node_l.prev:
                 node_l.prev.next = merged_node
             if node_r.next:
                 node_r.next.prev = merged_node
 
             # Left Neighbor
-            if node_l.prev is not None:
-                prev_node = node_l.prev
-                old_pair = (prev_node.val, node_l.val)
+            if merged_node.prev is not None:
+                prev_node = merged_node.prev
+                old_pair = (prev_node.val, max_pair[0])
                 new_pair = (prev_node.val, merged_node.val)
 
-                update_pair(prev_node, node_l, merged_node, old_pair, new_pair, True)
+                update_pair(prev_node,node_l, merged_node, old_pair, new_pair, True)
 
-            if node_r.next is not None:
+            if merged_node.next is not None:
                 next_node = merged_node.next
-                old_pair = (node_r.val, next_node.val)
+                old_pair = (max_pair[1], next_node.val)
                 new_pair = (merged_node.val, next_node.val)
                 
-                update_pair(next_node, node_r, merged_node, old_pair, new_pair, False)
+                update_pair(next_node,node_r, merged_node, old_pair, new_pair, False)
 
-            # Finially, we need mark node_l and node_r are merged for iteration later
-            node_l.val = node_r.val = merged_bytes
-        
         # Delete this pair
         sorted_count.discard((byte_pair_count[max_pair], max_pair))
         byte_pair_count.pop(max_pair)
