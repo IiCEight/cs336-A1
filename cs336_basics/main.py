@@ -16,10 +16,13 @@ app = typer.Typer(
 def main(level: Annotated[str, typer.Option("-l", help="Logging level")] = "DEBUG"):
     loggerConfig.setUpLogger(level)
     
-    input_path = "./data/TinyStoriesV2-GPT4-valid.txt"
+    input_path = "./data/temp.txt"
+    input_path = "/home/saber/cs336-A1/tests/fixtures/tinystories_sample_5M.txt"
+    input_path = "./data/overlap.txt"
     special_tokens = [b"<|endoftext|>"]
+    merge_times = 500
 
-    train_bpe(input_path, ONE_BYTES_SIZE + 1000, special_tokens)
+    train_bpe(input_path, ONE_BYTES_SIZE + merge_times + len(special_tokens), special_tokens)
     
 
 if __name__ == "__main__":

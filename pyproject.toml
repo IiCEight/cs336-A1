@@ -21,6 +21,7 @@ dependencies = [
     "ty>=0.0.1a16",
     "loguru>=0.7.3",
     "typer>=0.21.1",
+    "sortedcontainers>=2.4.0",
 ]
 
 [build-system]
