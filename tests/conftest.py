@@ -7,6 +7,8 @@ import torch
 from torch import Tensor
 import pickle
 
+from cs336_basics.config import loggerConfig
+
 
 class DEFAULT:
     pass
@@ -294,6 +296,12 @@ def theta():
 @pytest.fixture
 def pos_ids(n_queries):
     return torch.arange(0, n_queries)
+
+# Run before test starts.
+# scope="session" -> Runs once for the entire pytest execution
+@pytest.fixture(autouse = True, scope="session")
+def before():
+    loggerConfig.setUpLogger("INFO")
 
 
 # # Example usage:
