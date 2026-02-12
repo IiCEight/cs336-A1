@@ -236,23 +236,22 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
     for pair, count in pair_count.items():
         counter.add(pair, count)
 
-    logger.info(f"First pair {counter.get_max()}")
 
     for merge_index in range(merge_times):
 
-        if (merge_index + 1) % 1 == 0:
+        if (merge_index + 1) % 10 == 0:
             logger.info(f"{merge_index + 1}/{merge_times} merge start!")
 
         max_count_pair = counter.get_max()
 
         # No pair to merge
-        if max_count_pair == -1:
+        if len(pair_count) == 0:
             logger.info("No pair to merge!!!!!")
             break
 
-        max_pair = max_count_pair[1]
+        max_pair, max_count = max(pair_count.items(), key=lambda x :(x[1], x[0]))
 
-        logger.debug(f"Max pair {max_pair}, max count {max_count_pair[0]}")
+        logger.debug(f"Max pair {max_pair}, max count {max_count}")
         
         merged_bytes = max_pair[0] + max_pair[1]
 
@@ -264,8 +263,6 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
 
         # we need copy one to prevent modifing when iterating
         occurrences = list(pair_index[max_pair])
-
-        print(f"len of occurences of pair in different words {len(occurrences)}")
 
         for i in occurrences:
             word, count = word_list[i]
@@ -282,11 +279,11 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
 
                 def update_piar_count_and_counter(old_pair, new_pair):
                     logger.debug(f"update_piar_count_and_counter: old_pair {old_pair},  new_pair {new_pair}")
-                    logger.debug(f"Before counter {counter}")
+                    # logger.debug(f"Before counter {counter}")
                     # update counter first since it depends on pair_count
-                    counter.decrement(old_pair, count)
-                    counter.increment(new_pair, count)
-                    logger.debug(f"After counter {counter}")
+                    # counter.decrement(old_pair, count)
+                    # counter.increment(new_pair, count)
+                    # logger.debug(f"After counter {counter}")
 
                     pair_count[old_pair] -= count
                     pair_count[new_pair] += count 
@@ -321,14 +318,20 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
                 pos += 1
 
             #   Since we merged all max_pair in this word, so pair will never occur in word
-            assert max_pair not in word, "Merged max_pair failed."
+            # assert max_pair not in word, "Merged max_pair failed."
 
         # 7. Now all max_pair are merged, we can directly delete max_pair
         counter.discard(max_pair)
         pair_index.pop(max_pair, 0)
         pair_count.pop(max_pair, 0)
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! BUG !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # Even level is INFO, and this message is silent, this line is time wasted a lot
+        # since we try to print counter!!!
+        # Even if your log level is set to INFO (meaning DEBUG messages are ignored), 
+        # the f-string itself is evaluated before the logger even checks the level.
         logger.debug(f"Finish merging one max_pair {max_pair}, counter {counter}")
-        
+        # GOOD: String conversion only happens IF log level is DEBUG
+        logger.debug("Finish merging one max_pair {}, counter {}", max_pair, counter)
     logger.info(f"Finial merges {merges}")
     logger.info(f"Finial vocabulary {vocabulary}")
 
