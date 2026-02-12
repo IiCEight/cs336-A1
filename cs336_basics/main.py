@@ -16,9 +16,9 @@ app = typer.Typer(
 def main(level: Annotated[str, typer.Option("-l", help="Logging level")] = "DEBUG"):
     loggerConfig.setUpLogger(level)
     
-    input_path = "./data/overlap.txt"
     input_path = "/home/saber/cs336-A1/tests/fixtures/tinystories_sample_5M.txt"
     input_path = "./data/temp.txt"
+    input_path = "./data/overlap.txt"
     special_tokens = ["<|endoftext|>"]
     merge_times = 100
 
