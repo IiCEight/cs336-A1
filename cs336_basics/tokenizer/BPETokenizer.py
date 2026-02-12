@@ -142,7 +142,7 @@ class orderedSet:
         self.sortedset = SortedSet()
         self.find_count_of_pair = func
 
-    #  Use to prin
+    #  Use to print
     def __str__(self):
         """Called when you run print(obj) or str(obj)"""
         return self.sortedset.__str__()
@@ -223,8 +223,8 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
             pair_index[pair].add(index)
             pair_count[pair] += count
 
-    # for pair, count in pair_count.items():
-    #     counter.add(pair, count)
+    for pair, count in pair_count.items():
+        counter.add(pair, count)
 
     for merge_index in range(merge_times):
         if (merge_index + 1) % 100 == 0:
