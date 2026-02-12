@@ -1,4 +1,6 @@
+from collections import defaultdict
 from functools import partial
+from hmac import new
 from multiprocessing import Pool
 import os
 from typing import BinaryIO
@@ -128,39 +130,64 @@ def pretokenizer(special_token: bytes, data: str) -> dict[tuple[bytes], int]:
     return pretokenized_map
 
 
-# Use a doubly linked list to store a split word
-class Node:
-    # __slots__ reduces memory usage by ~60% vs normal classes
-    __slots__ = ["count", "val", "prev", "next"]
+# Define my own data structure that supports
+# find max value and update any items.
+# Each item is a (count, pair(tuple[bytes]))
+class orderedSet:
+    def __init__(self, func):
+        self.sortedset = SortedSet()
+        self.find_count_of_pair = func
 
-    def __init__(self, val, count):
-        # the ocurrence of val in original word.
-        # The number of count in the same linked list is the same
-        self.count = count
-        self.val = val
-        self.prev = None
-        self.next = None
+    #  Use to prin
+    def __str__(self):
+        """Called when you run print(obj) or str(obj)"""
+        return self.sortedset.__str__()
 
 
-def build_linked_list(word: tuple[bytes], count: int) -> list[Node]:
-    """Converts a tuple of bytes (word) into a chain of Nodes."""
-    if not word:
-        return []
+    def add(self, pair : tuple[bytes], count:int):
+        self.sortedset.add((count, pair))
 
-    # 1. Create all nodes first
-    nodes = [Node(t, count) for t in word]
+    def increment(self, pair, val):
+        """
+        Find pair and increase pair.
+        If pair doesn't exist, only add new one.
+        """
+        old_count = self.find_count_of_pair(pair)
+        self.sortedset.discard((old_count, pair))
+        self.sortedset.add((old_count + val, pair))
+    
+    def decrement(self, pair, val):
+        """
+        Find pair and decrease pair.
+        If pair doesn't exist, Error!.
+        If decrease to zero, remove this pair.
+        """
+        old_count = self.find_count_of_pair(pair)
+        self.sortedset.remove((old_count, pair))
+        if old_count - val > 0:
+            self.sortedset.add((old_count - val, pair))
 
-    # 2. Link them up
-    for i in range(len(nodes) - 1):
-        nodes[i].next = nodes[i + 1]
-        nodes[i + 1].prev = nodes[i]
+    def discard(self, pair):
+        count = self.find_count_of_pair(pair)
+        self.sortedset.discard((count, pair))
 
-    return nodes
-
+    def get_max(self):
+        """
+        If there is no element, return -1
+        """
+        if len(self.sortedset) == 0:
+            return -1
+        return self.sortedset[-1]
+    
+    
+        
 
 def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
 
     pretokenized_map = load_data_and_pretokenize(input_path)
+    # Turn all tuple into list, since we need to modify it.
+    word_list:list = list(map(lambda pair_count : [list(pair_count[0]), pair_count[1]], 
+                         pretokenized_map.items()))
 
     bytes_plus_special_tokens_len = ONE_BYTES_SIZE + len(special_tokens)
     merge_times = vocab_size - bytes_plus_special_tokens_len
@@ -173,145 +200,113 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
 
     logger.info(f"Start merging pairs.... merge times {merge_times}")
 
-    # Use an ordered set to maintain the max occurence pair and modify the
-    # occurence of any pairs.
-    # Item of it is (count, pair(i.e., tuple[bytes]))
-    sorted_count = SortedSet()
-    # Used to store the node of occurrence of a pair.
-    byte_pair_index: dict[tuple[bytes] : list[tuple[Node]]] = {}
+
+    # Used to store the which word pair occurs.
+    # NOTE: Use defaultdict will simplify a lot!!!!
+    pair_index: dict[tuple[bytes] : set[int]] = defaultdict(set)
     # Used to store the count of occurrence of a pair.
-    byte_pair_count: dict[tuple[bytes] : int] = {}
+    pair_count: dict[tuple[bytes] : int] = defaultdict(int)
+    # Use an ordered set to maintain the max occurence pair and modify the
+    # occurence of any pairs. 
+    # Item of it is (count, pair(i.e., tuple[bytes]))
+    counter = orderedSet(lambda pair:pair_count[pair])
 
-    for word, count in pretokenized_map.items():
-        linked_list_word = build_linked_list(word, count)
-        for node_l, node_r in zip(linked_list_word, linked_list_word[1:]):
-            pair = (node_l.val, node_r.val)
-            # Return the value for key if key is in the dictionary,
-            # else default(0).
-            if pair not in byte_pair_index:
-                byte_pair_index[pair] = []
-            byte_pair_index[pair].append((node_l, node_r))
-            byte_pair_count[pair] = byte_pair_count.get(pair, 0) + count
+    for index, (word, count) in enumerate(word_list):
+        for pair in zip(word, word[1:]):
+            pair_index[pair].add(index)
+            pair_count[pair] += count
 
-    for pair, count in byte_pair_count.items():
-        sorted_count.add((count, pair))
 
-    def update_sorted_count(old_val, new_val):
-        # logger.debug(f"remove from sorted_count {old_val}")
-        sorted_count.discard(old_val)
-        # logger.debug(f"Add into sorted_count {new_val}")
-        sorted_count.add(new_val)
-        logger.debug(f"Current sorted_count {sorted_count}")
-
-        
-
-    def update_pair(neighbor_node, origin_node, merged_node, old_pair, new_pair, is_left_neighbor):
-        # delete old_piar pair TODO: what about count becomes 0.
-        logger.debug(f"Current sorted_count {sorted_count}")
-        sorted_count.remove((byte_pair_count[old_pair], old_pair))
-        # logger.debug(f"remove from sorted_count {(byte_pair_count[old_pair], old_pair)}")
-        byte_pair_count[old_pair] -= merged_node.count
-        if is_left_neighbor:
-            byte_pair_index[old_pair].remove((neighbor_node, origin_node))
-        else:
-            byte_pair_index[old_pair].remove((origin_node, neighbor_node))
-
-        sorted_count.add((byte_pair_count[old_pair], old_pair))
-        # logger.debug(f"Add into sorted_count {(byte_pair_count[old_pair], old_pair)}")
-        logger.debug(f"Current sorted_count {sorted_count}")
-        
-        # add new_pair
-        if new_pair not in byte_pair_index:
-            byte_pair_index[new_pair] = []
-
-        if is_left_neighbor:
-            byte_pair_index[new_pair].append((neighbor_node, merged_node))
-        else:
-            byte_pair_index[new_pair].append((merged_node, neighbor_node))
-
-        new_pair_count = byte_pair_count.get(new_pair, 0)
-        # NOTE: Since we are updating sorted_count, we need first to remove
-        # and then add.
-        sorted_count.discard((new_pair_count, new_pair))
-        # logger.debug(f"remove from sorted_count {(new_pair_count, new_pair)}")
-
-        byte_pair_count[new_pair] = new_pair_count + merged_node.count
-        sorted_count.add((byte_pair_count[new_pair], new_pair))
-        # logger.debug(f"Add into sorted_count {(byte_pair_count[new_pair], new_pair)}")
-        logger.debug(f"Current sorted_count {sorted_count}")
+    for pair, count in pair_count.items():
+        counter.add(pair, count)
 
     for merge_index in range(merge_times):
-        # logger.debug(f"Current byte_pair_map {byte_pair_count}")
 
-        max_count_pair = sorted_count[-1]
+        if (merge_index + 1) % 100 == 0:
+            logger.info(f"{merge_index + 1}/{merge_times} merge start!")
+
+        max_count_pair = counter.get_max()
+
+        # No pair to merge
+        if max_count_pair == -1:
+            logger.info("No pair to merge!!!!!")
+            break
 
         max_pair = max_count_pair[1]
 
         logger.debug(f"Max pair {max_pair}, max count {max_count_pair[0]}")
         
-        # No pair to merge
-        if max_count_pair[0] <= 0:
-            logger.info("No pair to merge!!!!!")
-            break
+
 
         vocabulary[merge_index + bytes_plus_special_tokens_len] = merged_bytes = (
             max_pair[0] + max_pair[1])
         merges.append(merged_bytes)
 
-        # For all max_pair, find this occurrence (node_l, node_r),
-        # and merge these two nodes and update pair(node_l.prev, node_l)
-        # and (node_r, node_r.next)
-
-        occurrences = byte_pair_index[max_pair]
-        # NOTE: create a new one to avoid modify it when iterating!!!
-        occurrences = list(byte_pair_index[max_pair])
-        logger.debug(f"Len of occurrences {len(occurrences)}")
-
-        for id, (node_l, node_r) in enumerate(occurrences):
-            # NOTE: The case of overlapping like aaaa and max_pair = (a, a).
-
-            logger.debug(f"{id}:max_pair {max_pair}, (node_l.val, node_r.val) {(node_l.val, node_r.val)}")
-
-            if node_l.val == merged_bytes or node_r.val == merged_bytes:
-                logger.debug("There is an overlapping!")
-                # we do not merge but update the count.
-                current_count_max_pair = byte_pair_count[max_pair]
-                update_sorted_count(
-                    (current_count_max_pair, max_pair), 
-                    (current_count_max_pair - node_l.count, max_pair)
-                    )
-                byte_pair_count[max_pair] = node_l.count
-                continue
-
-            # Change one of node_l and node_r into merged_node
-            merged_node = node_r # no copy, just a reference.
-            merged_node.val = merged_bytes
-            merged_node.prev = node_l.prev
-            if node_l.prev:
-                node_l.prev.next = merged_node
-            if node_r.next:
-                node_r.next.prev = merged_node
-
-            # Left Neighbor
-            if merged_node.prev is not None:
-                prev_node = merged_node.prev
-                old_pair = (prev_node.val, max_pair[0])
-                new_pair = (prev_node.val, merged_node.val)
-
-                update_pair(prev_node,node_l, merged_node, old_pair, new_pair, True)
-
-            if merged_node.next is not None:
-                next_node = merged_node.next
-                old_pair = (max_pair[1], next_node.val)
-                new_pair = (merged_node.val, next_node.val)
+        logger.debug(f"Current pair_index {pair_index}")
+        # For each occurrence of max_pair we need to update our data structure
+        for i in pair_index[max_pair]:
+            word, count = word_list[i]
+            # 1. find the all positions of max_pair in word
+            pos = 0
+            logger.debug(f"Current word {word}")
+            while pos < len(word) -1:
+                pair = (word[pos], word[pos + 1])
+                if pair != max_pair:
+                    pos += 1
+                    continue
                 
-                update_pair(next_node,node_r, merged_node, old_pair, new_pair, False)
+                logger.debug(f"Starting merge pair! Word {word}, pos {pos}, max_pair {max_pair}")
 
-        # Delete this pair
-        sorted_count.discard((byte_pair_count[max_pair], max_pair))
-        byte_pair_count.pop(max_pair)
-        byte_pair_index.pop(max_pair)
+                def update_piar_count_and_counter(old_pair, new_pair):
+                    logger.debug(f"update_piar_count_and_counter: old_pair {old_pair},  new_pair {new_pair}")
+                    logger.debug(f"Before counter {counter}")
+                    # update counter first since it depends on pair_count
+                    counter.decrement(old_pair, count)
+                    counter.increment(new_pair, count)
+                    logger.debug(f"After counter {counter}")
 
+                    pair_count[old_pair] -= count
+                    pair_count[new_pair] += count 
+                    # We don't need to remove index of old_pair. 
+                    # Since the case of overlap(oooo),
+                    # otherwise, we keep it, and handle it when iterate word.
+                    pair_index[new_pair].add(i)
+
+                # 2. upate left neighbor
+                if pos > 0:
+                    old_pair = (word[pos - 1], word[pos])
+                    new_pair = (word[pos - 1], merged_bytes)
+
+                    update_piar_count_and_counter(old_pair, new_pair)
+                    # how to update pair_index?
+
+                # 3. update right neighbor
+                if pos  + 1 < len(word) - 1:
+                    old_pair = (word[pos + 1], word[pos + 2])
+                    new_pair = (merged_bytes, word[pos + 2])
+
+                    update_piar_count_and_counter(old_pair, new_pair)
+
+                # 4. merge max_pair and update word_list
+                #   This will change word we are iterating.
+                #   And it can handle the overlap case. Since word[pos] is changed, 
+                #   when iterate word to find next pos, it will find correct pair.
+                word[pos] = merged_bytes
+                del word[pos + 1]
+                pair_index[max_pair].add(i)
+
+                # 6. move to next
+                pos += 1
+
+            #   Since we merged all max_pair in this word, so pair will never occur in word
+            assert max_pair not in word, "Merged max_pair failed."
+
+        # 7. Now all max_pair are merged, we can directly delete max_pair
+        counter.discard(max_pair)
+        pair_index.pop(max_pair, 0)
+        pair_count.pop(max_pair, 0)
+        logger.debug(f"Finish merging one max_pair {max_pair}, counter {counter}")
+        
 
     logger.info(f"Finial vocabulary {vocabulary}, merges {merges}")
 
