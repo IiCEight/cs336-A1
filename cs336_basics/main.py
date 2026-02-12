@@ -18,9 +18,12 @@ def main(level: Annotated[str, typer.Option("-l", help="Logging level")] = "DEBU
     
     input_path = "/home/saber/cs336-A1/tests/fixtures/tinystories_sample_5M.txt"
     input_path = "./data/temp.txt"
-    input_path = "./data/overlap.txt"
+    input_path = "./data/temp.txt"
+    input_path = "./data/TinyStoriesV2-GPT4-train.txt"
+    input_path = "./data/TinyStoriesV2-GPT4-valid.txt"
+
     special_tokens = ["<|endoftext|>"]
-    merge_times = 100
+    merge_times = 10000
 
     train_bpe(input_path, ONE_BYTES_SIZE + merge_times + len(special_tokens), special_tokens)
     

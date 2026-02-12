@@ -1,14 +1,11 @@
 from collections import Counter, defaultdict
-from enum import unique
 from functools import partial
-from hmac import new
 from multiprocessing import Pool
 import os
 from typing import BinaryIO
 
-# from loguru import logger
-from sortedcontainers import SortedDict, SortedSet
-from sympy import denom
+from loguru import logger
+from sortedcontainers import SortedSet
 
 from cs336_basics.constant.constant import ONE_BYTES_SIZE
 import regex as re
@@ -63,7 +60,7 @@ def find_chunk_boundaries(
 
 def load_data_and_pretokenize(input_path: str, special_tokens:list[bytes]) -> Counter:
     with open(input_path, "rb") as f:
-        num_processes = 4
+        num_processes = 7
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
 
         # The following is a serial implementation, but you can parallelize this
@@ -101,7 +98,7 @@ def load_data_and_pretokenize(input_path: str, special_tokens:list[bytes]) -> Co
 
 # use Regular expression to tokenize first (coarse-grained)
 def pretokenizer(special_tokens: list[str], data: str) -> Counter:
-    # logger.info("Pre-Tokenization....")
+    logger.info("Pre-Tokenization....")
 
     # First spilt by special_tokens.
     # re.escape is a helper function in Python that neutralizes special characters
@@ -149,13 +146,6 @@ class orderedSet:
     def __str__(self):
         """Called when you run print(obj) or str(obj)"""
         return self.sortedset.__str__()
-
-    def self_check(self):
-        pair_list = list(map(lambda x:x[1], self.sortedset))
-        unique_pair_list = set(pair_list)
-        if len(unique_pair_list) != len(pair_list):
-            logger.error("ordered set failed. Duplicate pair!")
-            return
 
     def add(self, pair : tuple[bytes], count:int):
         self.sortedset.add((count, pair))
@@ -226,6 +216,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
     # Use an ordered set to maintain the max occurence pair and modify the
     # occurence of any pairs. 
     # Item of it is (count, pair(i.e., tuple[bytes]))
+    counter = orderedSet(lambda pair:pair_count[pair])
 
     for index, (word, count) in enumerate(pretokenized_counter.items()):
         for pair in zip(word, word[1:]):
@@ -236,20 +227,20 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
     #     counter.add(pair, count)
 
     for merge_index in range(merge_times):
+        if (merge_index + 1) % 100 == 0:
+            logger.info("{}/{} merge start!", merge_index + 1, merge_times)
 
-        # if (merge_index + 1) % 100 == 0:
-        #     # logger.debug(f"{merge_index + 1}/{merge_times} merge start!")
+        max_count_pair = counter.get_max()
 
-        # max_count_pair = counter.get_max()
         # Iterate all pairs to find max O(pairs)
         if len(pair_count) == 0:
-            # logger.info("No pair to merge!!!!!")
+            logger.info("No pair to merge!!!!!")
             break
-            
+        max_pair = max_count_pair[1]
+
         # Since we don't find max pair frequently, we can directly brute force
-        # Use a O(log pairs) structure will slow it down a lot! Since check and modify will 
-        # become O(log pairs) and a dict does them O(1) for Average Case
-        max_pair, max_count = max(pair_count.items(), key = lambda x : (x[1], x[0]))
+        # This will slow a lot when txt is very large!!!!!!!!!!!!!!!!!!!
+        # max_pair, max_count = max(pair_count.items(), key = lambda x : (x[1], x[0]))
 
         # logger.debug(f"Max pair {max_pair}, max count {max_count}")
         
@@ -281,11 +272,9 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
 
                 def update_piar_count_and_counter(old_pair, new_pair):
                     # logger.debug(f"update_piar_count_and_counter: old_pair {old_pair},  new_pair {new_pair}")
-                    # # logger.debug(f"Before counter {counter}")
                     # update counter first since it depends on pair_count
-                    # counter.decrement(old_pair, count)
-                    # counter.increment(new_pair, count)
-                    # # logger.debug(f"After counter {counter}")
+                    counter.decrement(old_pair, count)
+                    counter.increment(new_pair, count)
 
                     pair_count[old_pair] -= count
                     pair_count[new_pair] += count 
@@ -327,7 +316,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
         # logger.debug(f"pair_index {pair_index}")
 
         # 7. Now all max_pair are merged, we can directly delete max_pair
-        # counter.discard(max_pair)
+        counter.discard(max_pair)
         pair_index.pop(max_pair, 0)
         pair_count.pop(max_pair, 0)
         # logger.debug(f"Finish merging one max_pair {max_pair}, pair_index {pair_index}")
