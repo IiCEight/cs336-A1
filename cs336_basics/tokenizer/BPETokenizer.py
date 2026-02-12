@@ -1,4 +1,5 @@
 from collections import defaultdict
+from enum import unique
 from functools import partial
 from hmac import new
 from multiprocessing import Pool
@@ -60,7 +61,7 @@ def find_chunk_boundaries(
     return sorted(set(chunk_boundaries))
 
 
-def load_data_and_pretokenize(input_path: str) -> dict[tuple[bytes] : int]:
+def load_data_and_pretokenize(input_path: str, special_tokens:list[bytes]) -> dict[tuple[bytes] : int]:
     with open(input_path, "rb") as f:
         num_processes = 4
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
@@ -80,13 +81,16 @@ def load_data_and_pretokenize(input_path: str) -> dict[tuple[bytes] : int]:
 
         # Run pre-tokenization on your chunk and store the counts for each pre-token
         with Pool(num_processes) as pool:
-            pretokenized_maps = pool.map(partial(pretokenizer, "<|endoftext|>"), chunks)
+            pretokenized_maps = pool.map(partial(pretokenizer, special_tokens), chunks)
+
+        def word2bytes(word:str)->tuple[bytes,...]:
+            return tuple(map(lambda char: bytes([char]), word.encode("utf-8")))
 
         # Combine these maps into one.
         pretokenized_map = {}
         for chunk_map in pretokenized_maps:
             for word, count in chunk_map.items():
-                pretokenized_map[word] = pretokenized_map.get(word, 0) + count
+                pretokenized_map[word2bytes(word)] = pretokenized_map.get(word, 0) + count
 
         # This can be elegantly rewrite as :
         # counters = map(Counter, pretokenized_maps)
@@ -96,16 +100,19 @@ def load_data_and_pretokenize(input_path: str) -> dict[tuple[bytes] : int]:
 
 
 # use Regular expression to tokenize first (coarse-grained)
-def pretokenizer(special_token: bytes, data: str) -> dict[tuple[bytes], int]:
+def pretokenizer(special_tokens: list[str], data: str) -> dict[str, int]:
     logger.info("Pre-Tokenization....")
 
-    # First spilt by special_token.
+    # First spilt by special_tokens.
     # re.escape is a helper function in Python that neutralizes special characters
     # in a string so they are treated as plain text by the Regular Expression engine.
-    patten = re.escape(special_token)
-    parts = re.split(patten, data)
-
     regularExp = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    if not special_tokens:
+        return re.findall(regularExp, data)
+
+    toks = sorted(special_tokens, key=len, reverse=True)
+    union = "|".join(re.escape(t) for t in toks)
+    parts = re.split(f"{union}", data)
 
     data_split = []
     for part in parts:
@@ -115,12 +122,12 @@ def pretokenizer(special_token: bytes, data: str) -> dict[tuple[bytes], int]:
 
     # My implements
     for match in data_split:
-        # Turn str into tuple[bytes
-        key = tuple(match.group())
+        # type of map_key is str
+        map_key = match.group()
         # logger.debug(f"Current match word: {key}")
         # Return the value for key if key is in the dictionary,
         # else default(0).
-        pretokenized_map[key] = pretokenized_map.get(key, 0) + 1
+        pretokenized_map[map_key] = pretokenized_map.get(map_key, 0) + 1
 
     # Python already did this using C implmentation
     # pretokenized_map = collections.Counter(data_split)
@@ -143,9 +150,16 @@ class orderedSet:
         """Called when you run print(obj) or str(obj)"""
         return self.sortedset.__str__()
 
+    def self_check(self):
+        pair_list = list(map(lambda x:x[1], self.sortedset))
+        unique_pair_list = set(pair_list)
+        if len(unique_pair_list) != len(pair_list):
+            logger.error("ordered set failed. Duplicate pair!")
+            return
 
     def add(self, pair : tuple[bytes], count:int):
         self.sortedset.add((count, pair))
+        self.self_check()
 
     def increment(self, pair, val):
         """
@@ -154,7 +168,7 @@ class orderedSet:
         """
         old_count = self.find_count_of_pair(pair)
         self.sortedset.discard((old_count, pair))
-        self.sortedset.add((old_count + val, pair))
+        self.add(pair, old_count + val)
     
     def decrement(self, pair, val):
         """
@@ -165,7 +179,7 @@ class orderedSet:
         old_count = self.find_count_of_pair(pair)
         self.sortedset.remove((old_count, pair))
         if old_count - val > 0:
-            self.sortedset.add((old_count - val, pair))
+            self.add(pair, old_count - val)
 
     def discard(self, pair):
         count = self.find_count_of_pair(pair)
@@ -180,11 +194,10 @@ class orderedSet:
         return self.sortedset[-1]
     
     
-        
-
 def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
 
-    pretokenized_map = load_data_and_pretokenize(input_path)
+    pretokenized_map = load_data_and_pretokenize(input_path, special_tokens)
+    # pretokenized_map = linear_pretokenizer(input_path, special_tokens)
     # Turn all tuple into list, since we need to modify it.
     word_list:list = list(map(lambda pair_count : [list(pair_count[0]), pair_count[1]], 
                          pretokenized_map.items()))
@@ -192,9 +205,12 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
     bytes_plus_special_tokens_len = ONE_BYTES_SIZE + len(special_tokens)
     merge_times = vocab_size - bytes_plus_special_tokens_len
 
-    vocabulary = {i: bytes([i]) for i in range(ONE_BYTES_SIZE)}
+    token_size = len(special_tokens)
+    vocabulary = {}
     for i, x in enumerate(special_tokens):
-        vocabulary[i + ONE_BYTES_SIZE] = x
+        vocabulary[i] = bytes(x.encode("utf-8"))
+    for i in range(ONE_BYTES_SIZE):
+        vocabulary[i + token_size] = bytes([i])
     # See page 9 for definitation.
     merges = []
 
@@ -220,9 +236,11 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
     for pair, count in pair_count.items():
         counter.add(pair, count)
 
+    logger.info(f"First pair {counter.get_max()}")
+
     for merge_index in range(merge_times):
 
-        if (merge_index + 1) % 100 == 0:
+        if (merge_index + 1) % 1 == 0:
             logger.info(f"{merge_index + 1}/{merge_times} merge start!")
 
         max_count_pair = counter.get_max()
@@ -236,15 +254,20 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
 
         logger.debug(f"Max pair {max_pair}, max count {max_count_pair[0]}")
         
+        merged_bytes = max_pair[0] + max_pair[1]
 
-
-        vocabulary[merge_index + bytes_plus_special_tokens_len] = merged_bytes = (
-            max_pair[0] + max_pair[1])
-        merges.append(merged_bytes)
+        vocabulary[merge_index + bytes_plus_special_tokens_len] = merged_bytes
+        merges.append(max_pair)
 
         logger.debug(f"Current pair_index {pair_index}")
         # For each occurrence of max_pair we need to update our data structure
-        for i in pair_index[max_pair]:
+
+        # we need copy one to prevent modifing when iterating
+        occurrences = list(pair_index[max_pair])
+
+        print(f"len of occurences of pair in different words {len(occurrences)}")
+
+        for i in occurrences:
             word, count = word_list[i]
             # 1. find the all positions of max_pair in word
             pos = 0
@@ -278,10 +301,9 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
                     new_pair = (word[pos - 1], merged_bytes)
 
                     update_piar_count_and_counter(old_pair, new_pair)
-                    # how to update pair_index?
 
                 # 3. update right neighbor
-                if pos  + 1 < len(word) - 1:
+                if pos + 1 < len(word) - 1:
                     old_pair = (word[pos + 1], word[pos + 2])
                     new_pair = (merged_bytes, word[pos + 2])
 
@@ -293,7 +315,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
                 #   when iterate word to find next pos, it will find correct pair.
                 word[pos] = merged_bytes
                 del word[pos + 1]
-                pair_index[max_pair].add(i)
+                # pair_index[max_pair].add(i)
 
                 # 6. move to next
                 pos += 1
@@ -307,7 +329,8 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
         pair_count.pop(max_pair, 0)
         logger.debug(f"Finish merging one max_pair {max_pair}, counter {counter}")
         
+    logger.info(f"Finial merges {merges}")
+    logger.info(f"Finial vocabulary {vocabulary}")
 
-    logger.info(f"Finial vocabulary {vocabulary}, merges {merges}")
 
     return vocabulary, merges

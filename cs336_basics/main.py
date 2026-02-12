@@ -17,10 +17,10 @@ def main(level: Annotated[str, typer.Option("-l", help="Logging level")] = "DEBU
     loggerConfig.setUpLogger(level)
     
     input_path = "./data/overlap.txt"
-    input_path = "./data/temp.txt"
     input_path = "/home/saber/cs336-A1/tests/fixtures/tinystories_sample_5M.txt"
-    special_tokens = [b"<|endoftext|>"]
-    merge_times = 1000
+    input_path = "./data/temp.txt"
+    special_tokens = ["<|endoftext|>"]
+    merge_times = 100
 
     train_bpe(input_path, ONE_BYTES_SIZE + merge_times + len(special_tokens), special_tokens)
     

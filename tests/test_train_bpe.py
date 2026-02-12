@@ -1,6 +1,8 @@
 import json
 import time
 
+from loguru import logger
+
 from .adapters import run_train_bpe
 from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
 
@@ -47,7 +49,9 @@ def test_train_bpe():
             )
             for merge_token_1, merge_token_2 in gpt2_reference_merges
         ]
+
     assert merges == reference_merges
+    # logger.info(f"merges {merges}  |  reference_merges {reference_merges}, equal {merges == reference_merges}")
 
     # Compare the vocab to the expected output vocab
     with open(reference_vocab_path, encoding="utf-8") as f:
@@ -59,7 +63,9 @@ def test_train_bpe():
     # Rather than checking that the vocabs exactly match (since they could
     # have been constructed differently, we'll make sure that the vocab keys and values match)
     assert set(vocab.keys()) == set(reference_vocab.keys())
+    # logger.info(f"vocab.keys() {set(vocab.keys())}  | reference_vocab.keys() {set(reference_vocab.keys())}, equal {set(vocab.keys()) == set(reference_vocab.keys())}")
     assert set(vocab.values()) == set(reference_vocab.values())
+    # logger.info(f"vocab.values() {set(vocab.values())}  | reference_vocab.values() {set(reference_vocab.values())}, equal {set(vocab.values()) == set(reference_vocab.values())}")
 
 
 def test_train_bpe_special_tokens(snapshot):
