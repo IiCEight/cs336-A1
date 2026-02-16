@@ -5,6 +5,7 @@ import os
 import resource
 import sys
 
+from loguru import logger
 import psutil
 import pytest
 import tiktoken
@@ -184,6 +185,8 @@ def test_ascii_string_matches_tiktoken():
     # assert ids == reference_ids
 
     tokenized_string = [tokenizer.decode([x]) for x in ids]
+
+
     assert tokenized_string == ["Hello", ",", " how", " are", " you", "?"]
 
     assert tokenizer.decode(ids) == test_string
@@ -285,9 +288,12 @@ def test_address_matches_tiktoken():
         corpus_contents = f.read()
     reference_ids = reference_tokenizer.encode(corpus_contents)
     ids = tokenizer.encode(corpus_contents)
+    # failed!
     assert ids == reference_ids
 
     assert tokenizer.decode(ids) == corpus_contents
+    logger.info("tokenizer.decode {}", tokenizer.decode(ids))
+    # passed
     assert reference_tokenizer.decode(reference_ids) == corpus_contents
 
 
