@@ -22,10 +22,10 @@ app = typer.Typer(
 def main(
     train_dataset_path: Annotated[
         str, typer.Option(help="path to the train dataset")
-    ] = "../data/TinyStoriesV2-GPT4-train.txt",
+    ] = "./data/TinyStoriesV2-GPT4-train.txt",
     valid_dataset_path: Annotated[
         str, typer.Option(help="path to the valid dataset")
-    ] = "../data/TinyStoriesV2-GPT4-valid.txt",
+    ] = "./data/TinyStoriesV2-GPT4-valid.txt",
     vocab_filepath : Annotated[
         str, typer.Option(help="path to saved vocabulary")
     ] = "./data/tinystories_vocab.json",

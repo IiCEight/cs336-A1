@@ -61,7 +61,7 @@ def find_chunk_boundaries(
 
 def load_data_and_pretokenize(input_path: str, special_tokens:list[bytes]) -> Counter:
     with open(input_path, "rb") as f:
-        num_processes = 7
+        num_processes = 16
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
 
         # The following is a serial implementation, but you can parallelize this
@@ -206,7 +206,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
     # See page 9 for definitation.
     merges = []
 
-    # logger.debug(f"Start merging pairs.... merge times {merge_times}")
+    logger.info(f"Start merging pairs.... merge times {merge_times}")
 
 
     # Used to store the which word pair occurs.
