@@ -5,6 +5,7 @@ from multiprocessing import Pool
 import os
 from typing import BinaryIO
 
+from cs336_basics.utils.bytes_str import str2bytes, str2tuple_of_bytes
 from loguru import logger
 from sortedcontainers import SortedSet
 
@@ -61,7 +62,7 @@ def find_chunk_boundaries(
 
 def load_data_and_pretokenize(input_path: str, special_tokens:list[bytes]) -> Counter:
     with open(input_path, "rb") as f:
-        num_processes = 16
+        num_processes = 8
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
 
         # The following is a serial implementation, but you can parallelize this
@@ -81,15 +82,14 @@ def load_data_and_pretokenize(input_path: str, special_tokens:list[bytes]) -> Co
         with Pool(num_processes) as pool:
             pretokenized_counters= pool.map(partial(pretokenizer, special_tokens), chunks)
 
-        def word2bytes(word:str)->tuple[bytes,...]:
-            return tuple(map(lambda char: bytes([char]), word.encode("utf-8")))
 
         # Combine these maps into one.
         pretokenized_counter = Counter()
         for chunk_map in pretokenized_counters:
             for word, count in chunk_map.items():
-                pretokenized_counter[word2bytes(word)] += count
+                pretokenized_counter[str2tuple_of_bytes(word)] += count
 
+        logger.info(f"Finish all of pre-tokenization, total unique pre-tokens: {len(pretokenized_counter)}")
         # This can be elegantly rewrite as :
         # counters = map(Counter, pretokenized_maps)
         # reduce(lambda a b: a + b, counters)
@@ -130,7 +130,7 @@ def pretokenizer(special_tokens: list[str], data: str) -> Counter:
     # Python already did this using C implmentation
     # pretokenized_map = collections.Counter(data_split)
 
-    # logger.debug(f"pretokenized_map :{pretokenized_counter}")
+    logger.info(f"Finish one thread of pre-tokenization, total unique pre-tokens: {len(pretokenized_counter)}")
 
     return pretokenized_counter
 
