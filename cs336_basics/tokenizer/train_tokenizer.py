@@ -1,5 +1,6 @@
 from collections import Counter, defaultdict
 from functools import partial
+import json
 from multiprocessing import Pool
 import os
 from typing import BinaryIO
@@ -326,3 +327,46 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
 
 
     return vocabulary, merges
+
+
+def save_vocabulary_merges(vocabulary: dict[int, bytes], merges: list[tuple[bytes, bytes]], 
+                   vocab_filepath: str, merges_filepath: str) -> None:
+    """
+    Saves the BPE vocabulary and merges to disk so they can be loaded by Tokenizer.from_files.
+    """
+    
+    # Define how to convert bytes back to strings for saving.
+    # Note: Replace this with your exact inverse of `str2bytes` if you have a custom mapping!
+    def bytes2str(b: bytes) -> str:
+        # backslashreplace ensures we don't crash on weird raw bytes
+        return b.decode("utf-8", errors="backslashreplace") 
+
+    # ---------------------------------------------------------
+    # 1. Save Vocabulary to JSON
+    # ---------------------------------------------------------
+    # Invert the dictionary from {id: bytes} to {"string": id}
+    vocab_for_json = {}
+    for token_id, token_bytes in vocabulary.items():
+        token_str = bytes2str(token_bytes)
+        vocab_for_json[token_str] = token_id
+
+    # Create directories if they don't exist
+    os.makedirs(os.path.dirname(vocab_filepath), exist_ok=True)
+    
+    logger.info(f"Saving vocabulary to {vocab_filepath}")
+    with open(vocab_filepath, "w", encoding="utf-8") as f:
+        # ensure_ascii=False keeps special characters intact instead of \u escape codes
+        json.dump(vocab_for_json, f, ensure_ascii=False, indent=2)
+
+    # ---------------------------------------------------------
+    # 2. Save Merges to Text File
+    # ---------------------------------------------------------
+    logger.info(f"Saving merges to {merges_filepath}")
+    with open(merges_filepath, "w", encoding="utf-8") as f:
+        # Add a version header (your from_files safely skips this because it starts with #)
+        f.write("# version: 1.0\n")
+        
+        for p1, p2 in merges:
+            p1_str = bytes2str(p1)
+            p2_str = bytes2str(p2)
+            f.write(f"{p1_str} {p2_str}\n")

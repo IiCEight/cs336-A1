@@ -7,7 +7,7 @@ from cs336_basics.module.swiglu import SwiGLU
 
 class TransformerBlock(nn.Module):
     def __init__(self, d_model: int, num_heads: int, d_ff:int, max_seq_len:int=None, 
-                 theta :float = None):
+                 theta :float = None, device:torch.device | None = None):
         """
         Args:
             d_model: int Dimensionality of the Transformer block inputs.
@@ -15,10 +15,10 @@ class TransformerBlock(nn.Module):
             d_ff: int Dimensionality of the position-wise feed-forward inner layer.
         """
         super().__init__()
-        self.attn = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta)
-        self.ln_1 = RMSNorm(d_model)
-        self.ln_2 = RMSNorm(d_model)
-        self.ffn = SwiGLU(d_model, d_ff)
+        self.attn = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta, device)
+        self.ln_1 = RMSNorm(d_model, device)
+        self.ln_2 = RMSNorm(d_model, device)
+        self.ffn = SwiGLU(d_model, d_ff, device)
 
     def forward(self, x:torch.Tensor, token_positions:torch.Tensor)->torch.Tensor:
         y = x + self.attn(self.ln_1(x), token_positions)

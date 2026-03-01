@@ -10,7 +10,7 @@ from cs336_basics.utils.scaled_dot_product_attention import scaled_dot_product_a
 
 class MultiheadSelfAttention(nn.Module):
     def __init__(self, d_model: int, num_heads: int, max_seq_len:int=None, 
-                 theta :float = None):
+                 theta :float = None, device:torch.device | None = None):
         super().__init__()
         self.d_model = d_model
         self.num_heads = num_heads
@@ -23,7 +23,7 @@ class MultiheadSelfAttention(nn.Module):
         self.weight_O = nn.Parameter(torch.empty(d_model, num_heads * self.d_v))
 
         if theta is not None:
-            self.rope = RoPE(theta, self.d_k, max_seq_len)
+            self.rope = RoPE(theta, self.d_k, max_seq_len, device)
 
         self.reset_parameter()
 

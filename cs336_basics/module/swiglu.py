@@ -7,7 +7,7 @@ import torch.nn as nn
 
 # See page 22 for details.
 class SwiGLU(nn.Module):
-    def __init__(self, d_model, d_ff):
+    def __init__(self, d_model, d_ff, device:torch.device | None = None):
         super().__init__()
         self.d_model = d_model
         self.d_ff = d_ff

@@ -5,12 +5,12 @@ from cs336_basics.module.embedding import Embedding
 from cs336_basics.module.linear import Linear
 from cs336_basics.module.rms_norm import RMSNorm
 from cs336_basics.module.transformer_block import TransformerBlock
-from cs336_basics.utils.softmax import softmax
 
 
 class TransformerLM(nn.Module):
     def __init__(self, vocab_size: int, context_length: int, num_layers: int, 
-                 d_model:int, num_heads:int, d_ff: int, rope_theta : float):
+                 d_model:int, num_heads:int, d_ff: int, rope_theta : float, 
+                 device:torch.device | None = None):
         """
         Args:
             vocab_size: int The size of the vocabulary, necessary for determining the dimensionality of the token
@@ -33,14 +33,14 @@ class TransformerLM(nn.Module):
         self.num_heads = num_heads
         self.d_ff = d_ff
         self.rope_theta  = rope_theta
-        self.embedding = Embedding(vocab_size, d_model)
+        self.embedding = Embedding(vocab_size, d_model, device)
         # NOTE: Wrapped in nn.ModuleList so PyTorch tracks the weights!
         self.transformer_blocks = nn.ModuleList([
-            TransformerBlock(d_model, num_heads, d_ff, context_length, rope_theta) 
+            TransformerBlock(d_model, num_heads, d_ff, context_length, rope_theta, device) 
             for _ in range(num_layers)
         ])
-        self.norm_layer = RMSNorm(d_model)
-        self.linear = Linear(d_model, vocab_size)
+        self.norm_layer = RMSNorm(d_model, device)
+        self.linear = Linear(d_model, vocab_size, device)
 
     def forward(self, x:torch.Tensor, token_positions:torch.Tensor):
         x = self.embedding.forward(x)

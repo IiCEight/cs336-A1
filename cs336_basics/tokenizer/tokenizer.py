@@ -75,7 +75,7 @@ class Tokenizer:
     # Class method (like static method in java)
     @classmethod
     def from_files(cls, vocab_filepath:str, merges_filepath:str, 
-                   special_tokens:list[str]|None=None):
+                   special_tokens:list[str]):
         # 1. Load Vocabulary (JSON: {"token_str": id})
         logger.info(f"Loading vocabulary from {vocab_filepath}")
         with open(vocab_filepath, "r", encoding="utf-8") as f:
@@ -100,7 +100,8 @@ class Tokenizer:
             
             for line in lines[start_idx:]:
                 line = line.strip()
-                if not line: continue
+                if not line: 
+                    continue
                 
                 # Split "t h" -> ("t", "h")
                 parts = line.split()
