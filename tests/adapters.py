@@ -12,7 +12,6 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 from cs336_basics.checkpoint.check_point import load_checkpoint, save_checkpoint
-from cs336_basics.load.data_loader import data_loader
 from cs336_basics.module.multihead_self_attention import MultiheadSelfAttention
 from cs336_basics.module.rms_norm import RMSNorm
 from cs336_basics.module.rope import RoPE

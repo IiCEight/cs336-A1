@@ -5,7 +5,7 @@ from multiprocessing import Pool
 import os
 from typing import BinaryIO
 
-from cs336_basics.utils.bytes_str import str2bytes, str2tuple_of_bytes
+from cs336_basics.utils.bytes_str import str2tuple_of_bytes
 from loguru import logger
 from sortedcontainers import SortedSet
 
@@ -59,48 +59,52 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
+# Pass the start and end byte positions to each worker
+
+# **DO NOT** pass the large chunk of text to each worker directly, 
+# since it will cause memory issue!! 
+def read_chunk_and_pretokenize(input_path: str, special_tokens:list[bytes],
+                                start_and_end : tuple[int]) -> Counter:
+    logger.info("Start one thread of Pre-tokenization....")
+
+    start, end = start_and_end
+    # Each worker opens the file independently
+    with open(input_path, "rb") as f:
+        f.seek(start)
+        # Read only the specific chunk for this worker
+        chunk = f.read(end - start).decode("utf-8", errors="ignore")
+    
+    # Pass the string directly to the tokenizer
+    return pretokenizer(special_tokens, chunk)
 
 def load_data_and_pretokenize(input_path: str, special_tokens:list[bytes]) -> Counter:
     with open(input_path, "rb") as f:
         num_processes = 8
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
 
-        # The following is a serial implementation, but you can parallelize this
-        # by sending each start/end pair to a set of processes.
-
-        chunks = []
-
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            # Since we open file using byte mode, we need to decode it into
-            # readable characters using utf-8.
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            # # logger.debug(f"Type of chunk {type(chunk)}")
-            chunks.append(chunk)
-
-        # Run pre-tokenization on your chunk and store the counts for each pre-token
-        with Pool(num_processes) as pool:
-            pretokenized_counters= pool.map(partial(pretokenizer, special_tokens), chunks)
+    # Run pre-tokenization on your chunk and store the counts for each pre-token
+    with Pool(num_processes) as pool:
+        pretokenized_counters= pool.map(
+            partial(read_chunk_and_pretokenize, input_path, special_tokens), 
+            zip(boundaries[:-1], boundaries[1:]))
 
 
-        # Combine these maps into one.
-        pretokenized_counter = Counter()
-        for chunk_map in pretokenized_counters:
-            for word, count in chunk_map.items():
-                pretokenized_counter[str2tuple_of_bytes(word)] += count
+    # Combine these maps into one.
+    pretokenized_counter = Counter()
+    for chunk_map in pretokenized_counters:
+        for word, count in chunk_map.items():
+            pretokenized_counter[str2tuple_of_bytes(word)] += count
 
-        logger.info(f"Finish all of pre-tokenization, total unique pre-tokens: {len(pretokenized_counter)}")
-        # This can be elegantly rewrite as :
-        # counters = map(Counter, pretokenized_maps)
-        # reduce(lambda a b: a + b, counters)
+    logger.info(f"Finish all of pre-tokenization, total unique pre-tokens: {len(pretokenized_counter)}")
+    # This can be elegantly rewrite as :
+    # counters = map(Counter, pretokenized_maps)
+    # reduce(lambda a b: a + b, counters)
 
     return pretokenized_counter
 
 
 # use Regular expression to tokenize first (coarse-grained)
 def pretokenizer(special_tokens: list[str], data: str) -> Counter:
-    logger.info("Pre-Tokenization....")
-
     # First spilt by special_tokens.
     # re.escape is a helper function in Python that neutralizes special characters
     # in a string so they are treated as plain text by the Regular Expression engine.
@@ -110,22 +114,19 @@ def pretokenizer(special_tokens: list[str], data: str) -> Counter:
 
     toks = sorted(special_tokens, key=len, reverse=True)
     union = "|".join(re.escape(t) for t in toks)
+
+    # Second, split by special_tokens
     parts = re.split(f"{union}", data)
 
-    data_split = []
-    for part in parts:
-        data_split.extend(re.finditer(regularExp, part))
-
     pretokenized_counter = Counter()
+    # Third, use regular expression to tokenize each part and combine them together.
+    for part in parts:
+        if not part: # Skip empty strings from split
+            continue
 
-    # My implements
-    for match in data_split:
-        # type of map_key is str
-        map_key = match.group()
-        # # logger.debug(f"Current match word: {key}")
-        # Return the value for key if key is in the dictionary,
-        # else default(0).
-        pretokenized_counter[map_key] += 1
+        # Iterate lazily; do NOT store match objects in a list!
+        for match in re.finditer(regularExp, part):
+            pretokenized_counter[match.group()] += 1
 
     # Python already did this using C implmentation
     # pretokenized_map = collections.Counter(data_split)
