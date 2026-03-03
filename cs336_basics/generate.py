@@ -1,5 +1,10 @@
+from einops import repeat
+from regex import B
 import torch
+from torch import optim
+from cs336_basics.checkpoint.check_point import load_checkpoint
 from cs336_basics.module.transformer_lm import TransformerLM
+from cs336_basics.optimizer.adamw import AdamW
 from cs336_basics.tokenizer.tokenizer import Tokenizer
 
 # use typer to parse command line arguments and parse Traceback stack
@@ -19,7 +24,7 @@ app = typer.Typer(
 def main(
     prompt : Annotated[
         str, typer.Argument()
-    ] = "hello",
+    ] = "Once upon a time, ",
     vocab_filepath : Annotated[
         str, typer.Option(help="path to saved vocabulary")
     ] = "./data/tinystories_vocab.json",
@@ -28,7 +33,7 @@ def main(
     ] = "./data/tinystories_merges.txt",
     checkpoint_path : Annotated[
         str, typer.Option(help="path to saved merges")
-    ] = "./checkpoint/best_checkpoint_epoch_X.pt",
+    ] = "./checkpoint/best_checkpoint_epoch_20000.pt",
     temperature : Annotated[float, typer.Option(help="batch size for training")] = 1.0,
     max_new_tokens : Annotated[int, typer.Option(help="max tokens the model generate")] = 200,
     vocab_size: Annotated[
@@ -53,42 +58,54 @@ def main(
     num_heads: Annotated[
         int, typer.Option(help="Number of attention heads.")
     ] = 16,
+    learning_rate : Annotated[
+        float, typer.Option(help="The learning rate.")
+    ] = 5e-4,
+    beta1: Annotated[float, typer.Option(help="AdamW beta1 parameter.")] = 0.9,
+    beta2: Annotated[float, typer.Option(help="AdamW beta2 parameter.")] = 0.95,
+    eps: Annotated[float, typer.Option(help="AdamW epsilon parameter.")] = 1e-8,
+    weight_decay: Annotated[float, typer.Option(help="AdamW weight decay.")] = 0.1,
     device: Annotated[str, typer.Option(help="device to run the model on")] = "cpu",
     level: Annotated[str, typer.Option("-l", help="Logging level")] = "INFO",
     ):
 
-    logger_config.setUpLogger(level)
+    logger_config.set_up_logger(level)
 
     # 1. Recreate the Tokenizer
     special_tokens = ["<|endoftext|>"]
-    tokenizer = Tokenizer.from_files(vocab_filepath, merges_filepath, special_tokens)
+    tokenizer = Tokenizer.from_files_remapped(vocab_filepath, merges_filepath, special_tokens)
 
     # 2. Recreate the Model Architecture (must match your training config exactly)
     model = TransformerLM(
         vocab_size, context_length, num_layers, 
         d_model, num_heads, d_ff, rope_theta, device
         )
+    optimizer = AdamW(model.parameters(), learning_rate, (beta1, beta2), eps, weight_decay)
+
 
     # 3. Load the Trained Weights
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict']) # Adjust key if your save_checkpoint used a different name
-    model.to(device)
-    model.eval() # CRITICAL: turn off dropout!
+    iteration = load_checkpoint(checkpoint_path,model, optimizer)
 
     # 4. Tokenize the input prompt
     input_ids = tokenizer.encode(prompt)
     input_tensor = torch.tensor([input_ids], dtype=torch.long).to(device)
 
     # 5. The Autoregressive Loop
-    print(f"--- Generating story from prompt: '{prompt}' ---\n")
+    print(f"\n------- Generating story from prompt: '{prompt}' -------\n")
     
     with torch.no_grad():
         for _ in range(max_new_tokens):
             # Crop the context if it exceeds your model's maximum context_length
             idx_cond = input_tensor[:, -context_length:]
             
+            seq_len = idx_cond.shape[1]
+            # Create 1D positions [0, 1, ..., seq_len-1]
+            token_positions = torch.arange(seq_len, dtype=torch.long, device=device)
+            # Expand to 2D [1, seq_len] to satisfy your RoPE module's shape requirements
+            token_positions = repeat(token_positions, 's -> batch s', batch = idx_cond.shape[0])
+
             # Forward pass to get logits
-            logits = model(idx_cond)
+            logits = model(idx_cond, token_positions)
             
             # Pluck out the logits for the very last token in the sequence
             next_token_logits = logits[:, -1, :]
@@ -113,7 +130,9 @@ def main(
     generated_ids = input_tensor[0].tolist()
     final_text = tokenizer.decode(generated_ids)
     
-    return final_text
+    
+    print(final_text)
+
 
 if __name__ == "__main__":
     app()

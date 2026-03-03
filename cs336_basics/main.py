@@ -101,6 +101,8 @@ def main(
     # logger.info("Loading pre-trained Tokenizer...")
     # tokenizer = Tokenizer.from_files(vocab_filepath, merges_filepath, special_tokens)
 
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
     logger.info("Mounting memory-mapped datasets...")
     # mode='r' is crucial! It ensures the training loop can read the data, 
     # but strictly prevents you from accidentally overwriting it.
