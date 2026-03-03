@@ -1,0 +1,17 @@
+{
+  "os":  "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "python":  "CPython 3.12.3",
+  "startedAt":  "2026-03-03T12:09:44.030978Z",
+  "program":  "/home/isaber/iSaber/cs336-A1/./cs336_basics/main.py",
+  "codePath":  "cs336_basics/main.py",
+  "codePathLocal":  "cs336_basics/main.py",
+  "git":  {
+    "remote":  "git@github.com:IiCEight/cs336-A1.git",
+    "commit":  "79c8ad03f43265c12c9117ea24241c0d1f00dcc8"
+  },
+  "email":  "1346959878@qq.com",
+  "root":  "/home/isaber/iSaber/cs336-A1",
+  "host":  "yly401",
+  "executable":  "/home/isaber/iSaber/cs336-A1/.venv/bin/python3",
+  "writerId":  "l3sie7mz3s13tmf8u4pqnzq89mj5pz09"
+}

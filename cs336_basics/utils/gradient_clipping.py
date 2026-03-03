@@ -24,8 +24,6 @@ def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: flo
     # 3. Calculate the global norm using p=2 (standard L2 norm)
     norm_l2 = torch.norm(flattened_grads, p=2)
 
-    print("norm = ", norm_l2)
-
     if norm_l2 > max_l2_norm:
         scale = max_l2_norm / (norm_l2 + eps)
 

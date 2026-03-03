@@ -16,8 +16,8 @@ class TransformerBlock(nn.Module):
         """
         super().__init__()
         self.attn = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta, device)
-        self.ln_1 = RMSNorm(d_model, device)
-        self.ln_2 = RMSNorm(d_model, device)
+        self.ln_1 = RMSNorm(d_model, device=device)
+        self.ln_2 = RMSNorm(d_model, device=device)
         self.ffn = SwiGLU(d_model, d_ff, device)
 
     def forward(self, x:torch.Tensor, token_positions:torch.Tensor)->torch.Tensor:

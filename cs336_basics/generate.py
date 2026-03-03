@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from cs336_basics.config import loggerConfig
+from cs336_basics.config import logger_config
 
 
 app = typer.Typer(
@@ -57,7 +57,7 @@ def main(
     level: Annotated[str, typer.Option("-l", help="Logging level")] = "INFO",
     ):
 
-    loggerConfig.setUpLogger(level)
+    logger_config.setUpLogger(level)
 
     # 1. Recreate the Tokenizer
     special_tokens = ["<|endoftext|>"]

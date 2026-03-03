@@ -1,3 +1,4 @@
+from loguru import logger
 import torch
 import torch.nn as nn
 
@@ -57,6 +58,8 @@ class RoPE(nn.Module):
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         
+        logger.debug("Applying RoPE. Input shape: {}, token_positions shape: {}", x.shape, token_positions.shape)
+
         # Slice the cached buffers up to the current sequence length
         # NOTE:
         # the resulting cos and sin tensors will AUTOMATICALLY be shape (..., seq_len, d_k).

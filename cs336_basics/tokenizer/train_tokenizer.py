@@ -5,12 +5,14 @@ from multiprocessing import Pool
 import os
 from typing import BinaryIO
 
-from cs336_basics.utils.bytes_str import str2tuple_of_bytes
+from cs336_basics.utils.bytes_str import bytes2str, str2tuple_of_bytes
 from loguru import logger
 from sortedcontainers import SortedSet
 
 from cs336_basics.constant.constant import ONE_BYTES_SIZE
 import regex as re
+
+from tests.common import gpt2_bytes_to_unicode
 
 
 def find_chunk_boundaries(
@@ -110,6 +112,7 @@ def pretokenizer(special_tokens: list[str], data: str) -> Counter:
     # in a string so they are treated as plain text by the Regular Expression engine.
     regularExp = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     if not special_tokens:
+        logger.warning("No special tokens!")
         return re.findall(regularExp, data)
 
     toks = sorted(special_tokens, key=len, reverse=True)
@@ -229,7 +232,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
         counter.add(pair, count)
 
     for merge_index in range(merge_times):
-        if (merge_index + 1) % 100 == 0:
+        if (merge_index + 1) % 1000 == 0:
             logger.info("{}/{} merge start!", merge_index + 1, merge_times)
 
         max_count_pair = counter.get_max()
@@ -331,16 +334,15 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[bytes]):
 
 
 def save_vocabulary_merges(vocabulary: dict[int, bytes], merges: list[tuple[bytes, bytes]], 
-                   vocab_filepath: str, merges_filepath: str) -> None:
+                           vocab_filepath: str, merges_filepath: str) -> None:
     """
     Saves the BPE vocabulary and merges to disk so they can be loaded by Tokenizer.from_files.
     """
+    # 1. Fetch the mapping and define the converter
+    byte_encoder = gpt2_bytes_to_unicode()
     
-    # Define how to convert bytes back to strings for saving.
-    # Note: Replace this with your exact inverse of `str2bytes` if you have a custom mapping!
     def bytes2str(b: bytes) -> str:
-        # backslashreplace ensures we don't crash on weird raw bytes
-        return b.decode("utf-8", errors="backslashreplace") 
+        return "".join([byte_encoder[x] for x in b])
 
     # ---------------------------------------------------------
     # 1. Save Vocabulary to JSON
@@ -364,7 +366,7 @@ def save_vocabulary_merges(vocabulary: dict[int, bytes], merges: list[tuple[byte
     # ---------------------------------------------------------
     logger.info(f"Saving merges to {merges_filepath}")
     with open(merges_filepath, "w", encoding="utf-8") as f:
-        # Add a version header (your from_files safely skips this because it starts with #)
+        # Add a version header
         f.write("# version: 1.0\n")
         
         for p1, p2 in merges:

@@ -2,6 +2,7 @@
 import os
 from typing import Annotated
 from loguru import logger
+from einops import repeat
 import torch
 import typer
 
@@ -9,7 +10,7 @@ import numpy as np
 import wandb
 
 from cs336_basics.checkpoint.check_point import save_checkpoint
-from cs336_basics.config import loggerConfig
+from cs336_basics.config import logger_config
 from cs336_basics.load.data_loader import get_batch_data, open_dataset
 from cs336_basics.module.transformer_lm import TransformerLM
 from cs336_basics.optimizer.adamw import AdamW
@@ -85,35 +86,28 @@ def main(
     beta2: Annotated[float, typer.Option(help="AdamW beta2 parameter.")] = 0.95,
     eps: Annotated[float, typer.Option(help="AdamW epsilon parameter.")] = 1e-8,
     weight_decay: Annotated[float, typer.Option(help="AdamW weight decay.")] = 0.1,
-    device: Annotated[str, typer.Option(help="device to run the model on")] = "cpu",
+    device: Annotated[str, typer.Option(help="device to run the model on")] = "cuda",
     level: Annotated[str, typer.Option("-l", help="Logging level")] = "INFO",
     wandb_project: Annotated[
-        str, typer.Option(help="WandB project name (leave empty to disable)")
+        str, typer.Option( "-w", help="WandB project name (leave empty to disable)")
     ] = "tinystories-gpt", # <-- 2. New CLI argument
     ):
     
-    loggerConfig.setUpLogger(level)
+    logger_config.set_up_logger(level)
 
-    input_path = "./data/TinyStoriesV2-GPT4-train.txt"
-    input_path = "./data/TinyStoriesV2-GPT4-valid.txt"
-    input_path = "./data/temp.txt"
-    input_path = "/home/saber/cs336-A1/tests/fixtures/tinystories_sample_5M.txt"
-
-    vocab_path = "/home/saber/cs336-A1/tests/fixtures/gpt2_vocab.json"
-    merges_path = "/home/saber/cs336-A1/tests/fixtures/gpt2_merges.txt"
-
-    special_tokens = ["<|endoftext|>"]
+    # special_tokens = ["<|endoftext|>"]
 
 
-
-    logger.info("Loading pre-trained Tokenizer...")
-    tokenizer = Tokenizer.from_files(vocab_filepath, merges_filepath, special_tokens)
+    # logger.info("Loading pre-trained Tokenizer...")
+    # tokenizer = Tokenizer.from_files(vocab_filepath, merges_filepath, special_tokens)
 
     logger.info("Mounting memory-mapped datasets...")
     # mode='r' is crucial! It ensures the training loop can read the data, 
     # but strictly prevents you from accidentally overwriting it.
     train_tokens = np.memmap(train_tokens_filepath, dtype=np.uint16, mode='r')
     valid_tokens = np.memmap(valid_tokens_filepath, dtype=np.uint16, mode='r')
+
+    logger.info("First 10 tokens in the training set: {}", train_tokens[:10])
 
     model = TransformerLM(
         vocab_size, context_length, num_layers, 
@@ -151,6 +145,11 @@ def main(
     optimizer = AdamW(model.parameters(), learning_rate, (beta1, beta2), eps, weight_decay)
 
 
+    # GENERATE IT ONCE HERE AND REUSE IT FOR EVERY BATCH TO SAVE TIME ON GPU
+    # This single tensor will be reused for every batch in training and evaluation
+    token_positions = torch.arange(context_length, dtype=torch.long, device=device)
+    token_positions = repeat(token_positions, "seq -> batch seq", batch=batch_size)
+
     model.train()
     best_valid_loss = float('inf')
     for epoch in range(1, epochs + 1):
@@ -162,7 +161,9 @@ def main(
 
         optimizer.zero_grad()
 
-        outputs = model(data_batch)
+        logger.debug("Begin to forward. Data batch shape: {}, token_positions shape: {}, Label batch shape: {}", data_batch.shape, token_positions.shape, label_batch.shape)
+
+        outputs = model(data_batch, token_positions)
 
         loss = criterion(outputs, label_batch)
 
@@ -196,7 +197,8 @@ def main(
 
         if epoch % epochs_per_evaluation == 0:
             logger.info("Starting evaluation on validation set.....")
-            valid_loss = evaluate(model, criterion, valid_tokens, batch_size, context_length, device)
+            valid_loss = evaluate(model, criterion, valid_tokens, batch_size, 
+                                  context_length, token_positions, device)
             logger.info("Valid Loss: {}", valid_loss)
 
             if wandb_project:
@@ -218,7 +220,7 @@ def main(
 
 
 def evaluate(model, criterion, dataset, batch_size, 
-         context_length, device, eval_iters=200):
+         context_length,token_positions, device, eval_iters=200):
     model.eval() # Set model to evaluation mode
     
     total_loss = 0.0
@@ -228,7 +230,7 @@ def evaluate(model, criterion, dataset, batch_size,
             data_batch, label_batch = get_batch_data(dataset, batch_size, context_length, device)
             data_batch = data_batch.to(device)
             label_batch = label_batch.to(device)
-            outputs = model(data_batch)
+            outputs = model(data_batch, token_positions)
 
             loss = criterion(outputs, label_batch)
 

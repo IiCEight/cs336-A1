@@ -7,8 +7,8 @@ import typer
 
 
 
-from cs336_basics.config import loggerConfig
-from cs336_basics.load.data_loader import open_dataset
+from cs336_basics.config import logger_config
+from cs336_basics.load.data_loader import chunked_file_reader, open_dataset
 from cs336_basics.tokenizer.tokenizer import Tokenizer
 from cs336_basics.tokenizer.train_tokenizer import save_vocabulary_merges, train_bpe
 
@@ -34,10 +34,13 @@ def main(
     ] = "./data/tinystories_merges.txt",
     train_tokens_filepath: Annotated[
         str, typer.Option(help="path to saved training tokens") 
-    ] = "./data/train_token.bin",
+    ] = "./data/train_token_origin.bin",
     valid_tokens_filepath: Annotated[
         str, typer.Option(help="path to saved validation tokens")
-    ] = "./data/valid_token.bin",
+    ] = "./data/valid_token_origin.bin",
+    chunks_num: Annotated[
+        int, typer.Option(help="number of chunks to split the dataset into")
+    ] = 10,
     vocab_size: Annotated[
         int, typer.Option(help="Size of the tokenizer vocabulary (e.g., 50257)")
     ] = 10000,
@@ -45,12 +48,10 @@ def main(
     level: Annotated[str, typer.Option("-l", help="Logging level")] = "INFO"
     ):
     
-    loggerConfig.setUpLogger(level)
+    logger_config.set_up_logger(level)
 
     special_tokens = ["<|endoftext|>"]
 
-
-    tokenizer = None
 
     vocabulary, merges = train_bpe(train_dataset_path,vocab_size, special_tokens)
     # Save the them to your data folder
@@ -62,28 +63,43 @@ def main(
     )
 
     tokenizer = Tokenizer(vocabulary, merges, special_tokens)
+    # tokenizer = Tokenizer.from_files_remapped(vocab_filepath, merges_filepath, special_tokens)
     
-    logger.info("Loading train and valid dataset...")
-    train_text, valid_text = open_dataset(train_dataset_path, valid_dataset_path)
+    # train_text, valid_text = open_dataset(train_dataset_path, valid_dataset_path)
 
     # Encode and save to memmap
-    for split, text in [("train", train_text), ("valid", valid_text)]:
+    for split, filepath in [("train", train_dataset_path), ("valid", valid_dataset_path)]:
         logger.info(f"Encoding {split} text...")
-        tokens = tokenizer.encode(text)
-        
-        logger.info(f"Saving {split} to np.memmap...")
-        
-        filepath = train_tokens_filepath if split == "train" else valid_tokens_filepath
 
-        # Create the memory-mapped array on disk
-        mmap = np.memmap(filepath, dtype=np.uint16, mode='w+', shape=(len(tokens),))
+        chunks_generator = chunked_file_reader(filepath, chunks_num)
         
-        # Write the tokens into the array
-        mmap[:] = tokens
-        
-        # CRITICAL: flush() forces the OS to write the data from RAM to the hard drive
-        mmap.flush()
-        logger.info(f"Successfully saved {split}.bin with {len(tokens)} tokens.")
+        tokens_generator = tokenizer.encode_iterable(chunks_generator)
+        output_path = train_tokens_filepath if split == "train" else valid_tokens_filepath
+        with open(output_path, 'wb') as f_out:
+            batch = []
+            total_tokens = 0
+            
+            # Iterate over the lazy tokens
+            for token_id in tokens_generator:
+                batch.append(token_id)
+                
+                # Write to disk in batches of 1,000,000 to keep it incredibly fast
+                if len(batch) >= 10_000_000:
+                    # Convert python ints to uint16 array, then to raw bytes, and write
+                    byte_data = np.array(batch, dtype=np.uint16).tobytes()
+                    f_out.write(byte_data)
+                    
+                    total_tokens += len(batch)
+                    batch.clear() # Clear the RAM!
+                    logger.info(f"  ... encoded {total_tokens} tokens so far")
+                    
+            # Write any remaining tokens in the final partial batch
+            if batch:
+                byte_data = np.array(batch, dtype=np.uint16).tobytes()
+                f_out.write(byte_data)
+                total_tokens += len(batch)
+
+        logger.info(f"Successfully saved {split}.bin with {total_tokens} tokens total.")
 
 if __name__ == "__main__":
     app()

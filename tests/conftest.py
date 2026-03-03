@@ -7,7 +7,7 @@ import torch
 from torch import Tensor
 import pickle
 
-from cs336_basics.config import loggerConfig
+from cs336_basics.config import logger_config
 
 
 class DEFAULT:
@@ -301,7 +301,7 @@ def pos_ids(n_queries):
 # scope="session" -> Runs once for the entire pytest execution
 @pytest.fixture(autouse = True, scope="session")
 def before():
-    loggerConfig.setUpLogger("INFO")
+    logger_config.setUpLogger("INFO")
 
 
 # # Example usage:

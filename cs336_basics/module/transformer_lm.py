@@ -39,7 +39,7 @@ class TransformerLM(nn.Module):
             TransformerBlock(d_model, num_heads, d_ff, context_length, rope_theta, device) 
             for _ in range(num_layers)
         ])
-        self.norm_layer = RMSNorm(d_model, device)
+        self.norm_layer = RMSNorm(d_model, device=device)
         self.linear = Linear(d_model, vocab_size, device)
 
     def forward(self, x:torch.Tensor, token_positions:torch.Tensor):

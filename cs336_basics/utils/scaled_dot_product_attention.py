@@ -4,7 +4,7 @@ import torch
 from cs336_basics.utils.softmax import softmax
 
 
-def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask=None):
+def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask=None) -> torch.Tensor:
     d_k = Q.shape[-1]
     numerator = einsum(Q, K, "... query_len d_k, ... key_len d_k -> ... query_len key_len")
     Q_transpoesK_scaled = numerator * torch.rsqrt(torch.tensor(d_k))

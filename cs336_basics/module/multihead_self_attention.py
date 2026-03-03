@@ -18,8 +18,8 @@ class MultiheadSelfAttention(nn.Module):
         self.d_v = self.d_k
         self.theta = theta
         self.max_seq_len = max_seq_len
-        # we concate QKV into a whole matrix since d_k == d_v
-        self.weight_QKV = nn.Parameter(torch.empty((num_heads * self.d_k * 3, d_model)))
+        # we concate qkv into a whole matrix since d_k == d_v
+        self.weight_qkv = nn.Parameter(torch.empty((num_heads * self.d_k * 3, d_model)))
         self.weight_O = nn.Parameter(torch.empty(d_model, num_heads * self.d_v))
 
         if theta is not None:
@@ -31,28 +31,32 @@ class MultiheadSelfAttention(nn.Module):
         # note: This depends on d_k == d_v
         std = math.sqrt(2.0/(self.d_k * self.num_heads + self.d_model))
 
-        nn.init.trunc_normal_(self.weight_QKV, 0, std, a = -3 * std, b = 3 * std)
+        nn.init.trunc_normal_(self.weight_qkv, 0, std, a = -3 * std, b = 3 * std)
         nn.init.trunc_normal_(self.weight_O, 0, std, a = -3 * std, b = 3 * std)
 
     def forward(self, x:torch.Tensor, token_positions:torch.Tensor = None)->torch.Tensor:
-        input = einsum(x, self.weight_QKV, "... seq_len d_model, d_out d_model -> ... seq_len d_out")
-        # Regard QKV and num_heads as batch-like dimensions.
+        input = einsum(x, self.weight_qkv, "... seq_len d_model, d_out d_model -> ... seq_len d_out")
+        # Regard qkv and num_heads as batch-like dimensions.
         input = rearrange(
-            input, "... seq_len (QKV num_heads d_k) -> ... QKV num_heads seq_len d_k",
-            QKV = 3,
+            input, "... seq_len (qkv num_heads d_k) -> ... qkv num_heads seq_len d_k",
+            qkv = 3,
             num_heads = self.num_heads,
             d_k = self.d_k
             )
+        # reshape token_positions to be broadcastable with input.
+        # add one dim for num_heads.
+        if token_positions is not None:
+            token_positions = rearrange(token_positions, "... seq_len-> ... 1 seq_len")
         
         seq_len = input.shape[-2]
-        causal_mask = torch.ones(seq_len, seq_len, dtype=torch.bool)
+        causal_mask = torch.ones(seq_len, seq_len, dtype=torch.bool).to(x.device)
         causal_mask = ~causal_mask.triu(diagonal=1)
-        Q, K, V = input[...,0,:,:,:], input[...,1,:,:,:], input[...,2,:,:,:]
+        q, k, v = input[...,0,:,:,:], input[...,1,:,:,:], input[...,2,:,:,:]
         if token_positions is not None:
-            Q = self.rope.forward(Q, token_positions)
-            K = self.rope.forward(K, token_positions)
+            q = self.rope.forward(q, token_positions)
+            k = self.rope.forward(k, token_positions)
 
-        attention_x = scaled_dot_product_attention(Q, K, V, causal_mask)
+        attention_x = scaled_dot_product_attention(q, k, v, causal_mask)
         # Concatenate all heads.
         attention_x = rearrange(
             attention_x, "... num_heads seq_len d_v -> ... seq_len (num_heads d_v)",

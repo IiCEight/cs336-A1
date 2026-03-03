@@ -1,0 +1,39 @@
+{
+  "os":  "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "python":  "CPython 3.12.3",
+  "startedAt":  "2026-03-03T12:29:46.686383Z",
+  "program":  "/home/isaber/iSaber/cs336-A1/./cs336_basics/main.py",
+  "codePath":  "cs336_basics/main.py",
+  "codePathLocal":  "cs336_basics/main.py",
+  "git":  {
+    "remote":  "git@github.com:IiCEight/cs336-A1.git",
+    "commit":  "79c8ad03f43265c12c9117ea24241c0d1f00dcc8"
+  },
+  "email":  "1346959878@qq.com",
+  "root":  "/home/isaber/iSaber/cs336-A1",
+  "host":  "yly401",
+  "executable":  "/home/isaber/iSaber/cs336-A1/.venv/bin/python3",
+  "cpu_count":  12,
+  "cpu_count_logical":  24,
+  "gpu":  "NVIDIA GeForce RTX 4090",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "1081101176832",
+      "used":  "11940737024"
+    }
+  },
+  "memory":  {
+    "total":  "29425287168"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 4090",
+      "memoryTotal":  "25757220864",
+      "architecture":  "Ada",
+      "uuid":  "GPU-dc852dbf-c9d2-69e0-e588-d781e76620df"
+    }
+  ],
+  "cudaVersion":  "13.1",
+  "writerId":  "bf3jmcitfotn2uqovt0y2prptze8an9i"
+}

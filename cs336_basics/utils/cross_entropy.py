@@ -1,6 +1,7 @@
 
 
 from einops import rearrange, repeat
+from loguru import logger
 import torch
 
 
@@ -13,6 +14,8 @@ def cross_entropy(inputs:torch.Tensor, targets:torch.Tensor)->torch.Tensor:
             Each value must be between 0 and `num_classes - 1`.
 
     """
+    logger.debug("Cross entropy loss. Inputs shape: {}, targets shape: {}", inputs.shape, targets.shape)
+
     max_inputs = inputs.max(dim=-1, keepdim=True).values
     
     # PyTorch automatically expands max_input to match input's shape here
@@ -23,7 +26,7 @@ def cross_entropy(inputs:torch.Tensor, targets:torch.Tensor)->torch.Tensor:
 
     # 3. Safely extract the correct logits using gather
     # targets_unsqueeze = targets.unsqueeze(-1)
-    targets_extend = repeat(targets, "batch -> batch 1")
+    targets_extend = repeat(targets, "... -> ... 1")
     # Use gather to index,correct_logits[i] = inputs[i, targets_extend[i,0]]
     correct_logits = torch.gather(inputs, dim=-1, index=targets_extend)
     

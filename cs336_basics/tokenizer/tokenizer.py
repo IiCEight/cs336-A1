@@ -4,7 +4,7 @@ from loguru import logger
 import regex as re
 from collections.abc import Iterable, Iterator
 
-from cs336_basics.utils.bytes_str import  str2bytes, str2tuple_of_bytes
+from cs336_basics.utils.bytes_str import  gpt2_unicode_to_bytes, str2bytes, str2tuple_of_bytes
 
 
 class Tokenizer:
@@ -49,10 +49,10 @@ class Tokenizer:
         logger.info("Start pre-tokening...")
         regularExp = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
-        logger.debug("s.t. {}, text {}", self.special_tokens, text)
+        logger.debug("s.t. {}, len of text {}", self.special_tokens, len(text))
         
         if not self.special_tokens:
-            logger.info("No special tokens!")
+            logger.warning("No special tokens!")
             words = re.findall(regularExp, text)
             return [str2tuple_of_bytes(word) for word in words]
 
@@ -62,6 +62,8 @@ class Tokenizer:
         # when spliting.
         parts = re.split(f"({union})", text)
         
+        logger.info("Finish splitting by special tokens.")
+
         pre_tokens = []
         for part in parts:
             if part in self.special_tokens:
@@ -69,7 +71,7 @@ class Tokenizer:
             else:
                 words = re.findall(regularExp, part)
                 pre_tokens.extend([str2tuple_of_bytes(word) for word in words])
-
+        logger.info("Finish pre-tokening! The number of pre-tokens {}", len(pre_tokens))
         return pre_tokens
 
     # Class method (like static method in java)
@@ -111,9 +113,54 @@ class Tokenizer:
                     merges.append((str2bytes(parts[0]), str2bytes(parts[1])))
 
         return cls(vocabulary, merges, special_tokens)
+    
+    # Assuming this is inside your Tokenizer class
+    @classmethod
+    def from_files_remapped(cls, vocab_filepath: str, merges_filepath: str, 
+                   special_tokens: list[str]):
+        
+        # 1. Fetch the inverse mapping and define the converter
+        unicode_decoder = gpt2_unicode_to_bytes()
+        
+        def str2bytes(text: str) -> bytes:
+            return bytes([unicode_decoder[char] for char in text])
+
+        # ---------------------------------------------------------
+        # 1. Load Vocabulary (JSON: {"token_str": id})
+        # ---------------------------------------------------------
+        logger.info(f"Loading vocabulary from {vocab_filepath}")
+        with open(vocab_filepath, "r", encoding="utf-8") as f:
+            vocab_raw = json.load(f)
+            
+        vocabulary = {}
+        for token_str, token_id in vocab_raw.items():
+            # JSON forces keys to be strings. We must encode them back to bytes safely.
+            vocabulary[int(token_id)] = str2bytes(token_str)
+
+        # ---------------------------------------------------------
+        # 2. Load Merges (Text file)
+        # ---------------------------------------------------------
+        logger.info(f"Loading merges from {merges_filepath}")
+        merges = []
+        with open(merges_filepath, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            start_idx = 1 if lines[0].startswith("#") or "version" in lines[0] else 0
+            
+            for line in lines[start_idx:]:
+                line = line.strip()
+                if not line: 
+                    continue
+                
+                # Split on literal space. (This is safe because our byte mapping turns actual 
+                # space bytes into 'Ġ', so the only true spaces here are the delimiters!)
+                parts = line.split(" ")
+                if len(parts) == 2:
+                    merges.append((str2bytes(parts[0]), str2bytes(parts[1])))
+
+        return cls(vocabulary, merges, special_tokens)
 
     def merge_one_token(self, pretoken:tuple[bytes], index, pre_tokens_len)->list[int]:
-        if (index + 1) % 10000 == 0:
+        if (index + 1) % 10000000 == 0:
             logger.info("Working on {}/{} pretoken", index + 1, pre_tokens_len)
 
         if self.pretoken2token_id.get(pretoken) is not None:
@@ -149,6 +196,11 @@ class Tokenizer:
         # FP way
         # token = list(map(lambda x: self.reversed_vocabulary[x], token))
 
+        for merged_bytes in word:
+            if merged_bytes not in self.reversed_vocabulary:
+                logger.error("Merged bytes {} not in vocabulary!", merged_bytes)
+                raise ValueError(f"Merged bytes {merged_bytes} not in vocabulary!")
+
         token = [self.reversed_vocabulary[merged_bytes] for merged_bytes in word]
         self.pretoken2token_id[pretoken] = token
 
@@ -182,7 +234,6 @@ class Tokenizer:
             for token_id in ids:
                 yield token_id
 
-
     def decode(self, ids:list[int])-> str:
         logger.info("Start decoding....")
         text = b""
@@ -205,6 +256,6 @@ class Tokenizer:
         logger.info("Begin to transform bytes into Unicode!")
         text = text_bytes.decode("utf-8", errors="replace")
 
-        logger.debug("Finished decoding. Text {}", text)
+        logger.debug("Finished decoding. len of Text {}", len(text))
             
         return text
