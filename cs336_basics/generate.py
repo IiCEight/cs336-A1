@@ -24,7 +24,7 @@ app = typer.Typer(
 def main(
     prompt : Annotated[
         str, typer.Argument()
-    ] = "Once upon a time, ",
+    ] = "Hello ",
     vocab_filepath : Annotated[
         str, typer.Option(help="path to saved vocabulary")
     ] = "./data/tinystories_vocab.json",
@@ -66,7 +66,7 @@ def main(
     eps: Annotated[float, typer.Option(help="AdamW epsilon parameter.")] = 1e-8,
     weight_decay: Annotated[float, typer.Option(help="AdamW weight decay.")] = 0.1,
     device: Annotated[str, typer.Option(help="device to run the model on")] = "cpu",
-    level: Annotated[str, typer.Option("-l", help="Logging level")] = "INFO",
+    level: Annotated[str, typer.Option("-l", help="Logging level")] = "WARNING",
     ):
 
     logger_config.set_up_logger(level)

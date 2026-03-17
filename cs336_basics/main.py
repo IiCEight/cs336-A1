@@ -41,13 +41,13 @@ def main(
         str, typer.Option(help="path to saved validation tokens")
     ] = "./data/valid_token.bin",
     checkpoint_dir : Annotated[str, typer.Option()] = "./checkpoint/",
-    epochs: Annotated[int, typer.Option(help="Total number of training epochs")] = 50000,
-    epochs_per_checkpoint : Annotated[
-        int, typer.Option(help="The number of epochs per checkpoint.")
+    iters: Annotated[int, typer.Option(help="Total number of training iters")] = 50000,
+    iters_per_checkpoint : Annotated[
+        int, typer.Option(help="The number of iters per checkpoint.")
     ] = 5000,
-    epochs_per_evaluation : Annotated[
+    iters_per_evaluation : Annotated[
         int, 
-        typer.Option(help="The number of epochs per evaluation of validation dataset.")
+        typer.Option(help="The number of iters per evaluation of validation dataset.")
     ] = 1000,
     batch_size: Annotated[int, typer.Option(help="batch size for training")] = 64,
     vocab_size: Annotated[
@@ -78,8 +78,8 @@ def main(
     max_l2_norm_of_gradient : Annotated[
         float, typer.Option(help="Used for gradient clipping.")
     ] = 1.0,
-    warmup_iters: Annotated[int, typer.Option(help="Number of warmup steps.")] = 1000,
-    cosine_cycle_iters: Annotated[int, typer.Option(help="Number of cosine cycle steps.")] = 50000,
+    warmup_iters: Annotated[int, typer.Option(help="Number of warmup iters.")] = 1000,
+    cosine_cycle_iters: Annotated[int, typer.Option(help="Number of cosine cycle iters.")] = 50000,
     min_learning_rate: Annotated[float, typer.Option(help="The minimum learning rate.")] = 5e-5,
     max_learning_rate: Annotated[float, typer.Option(help="The maximum learning rate.")] = 5e-4,
     beta1: Annotated[float, typer.Option(help="AdamW beta1 parameter.")] = 0.9,
@@ -98,8 +98,6 @@ def main(
     # special_tokens = ["<|endoftext|>"]
 
 
-    # logger.info("Loading pre-trained Tokenizer...")
-    # tokenizer = Tokenizer.from_files(vocab_filepath, merges_filepath, special_tokens)
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -122,7 +120,7 @@ def main(
         wandb.init(
             project=wandb_project,
             config={
-                "epochs": epochs,
+                "iters": iters,
                 "batch_size": batch_size,
                 "vocab_size": vocab_size,
                 "context_length": context_length,
@@ -154,7 +152,7 @@ def main(
 
     model.train()
     best_valid_loss = float('inf')
-    for epoch in range(1, epochs + 1):
+    for iter in range(1, iters + 1):
         loss4log= 0.0
         data_batch, label_batch = get_batch_data(train_tokens, batch_size, context_length, device)
 
@@ -175,29 +173,29 @@ def main(
 
         optimizer.step()
         
-        new_lr = lr_cosine_schedule(epoch, max_learning_rate, min_learning_rate, warmup_iters, cosine_cycle_iters)
+        new_lr = lr_cosine_schedule(iter, max_learning_rate, min_learning_rate, warmup_iters, cosine_cycle_iters)
         # update learning rate.
         for group in optimizer.param_groups:
             group["lr"] = new_lr
 
         loss4log = loss.item()
 
-        if epoch % 50 == 0:
-            logger.info("Epoch [{}/{}], Avg Loss: {:.4f}", epoch, epochs, loss4log)
+        if iter % 50 == 0:
+            logger.info("Epoch [{}/{}], Avg Loss: {:.4f}", iter, iters, loss4log)
             if wandb_project:
                     wandb.log({
                         "train/loss": loss4log, 
                         "train/learning_rate": new_lr, 
-                        "step": epoch
+                        "iter": iter
                     })
 
-        if epoch % epochs_per_checkpoint == 0:
-            logger.info("Saving checkpoint: epoch {}", epoch)
-            file_name = f"checkpoint_epoch_{epoch}.pt"
+        if iter % iters_per_checkpoint == 0:
+            logger.info("Saving checkpoint: iter {}", iter)
+            file_name = f"checkpoint_iter_{iter}.pt"
             save_path = os.path.join(checkpoint_dir, file_name)
-            save_checkpoint(model, optimizer, epoch, save_path)
+            save_checkpoint(model, optimizer, iter, save_path)
 
-        if epoch % epochs_per_evaluation == 0:
+        if iter % iters_per_evaluation == 0:
             logger.info("Starting evaluation on validation set.....")
             valid_loss = evaluate(model, criterion, valid_tokens, batch_size, 
                                   context_length, token_positions, device)
@@ -206,15 +204,15 @@ def main(
             if wandb_project:
                 wandb.log({
                     "val/loss": valid_loss,
-                    "step": epoch
+                    "iter": iter
                 })
 
             if valid_loss < best_valid_loss:
                 best_valid_loss = valid_loss
                 logger.info("--> New best validation loss! Saving best checkpoint...")
-                file_name = f"best_checkpoint_epoch_{epoch}.pt"
+                file_name = f"best_checkpoint_iter_{iter}.pt"
                 save_path = os.path.join(checkpoint_dir, file_name)
-                save_checkpoint(model, optimizer, epoch, save_path)
+                save_checkpoint(model, optimizer, iter, save_path)
     
     # 6. Finish the wandb run
     if wandb_project:
@@ -228,7 +226,7 @@ def evaluate(model, criterion, dataset, batch_size,
     total_loss = 0.0
     
     with torch.no_grad():
-        for epoch in range(1, eval_iters + 1):
+        for iter in range(1, eval_iters + 1):
             data_batch, label_batch = get_batch_data(dataset, batch_size, context_length, device)
             data_batch = data_batch.to(device)
             label_batch = label_batch.to(device)

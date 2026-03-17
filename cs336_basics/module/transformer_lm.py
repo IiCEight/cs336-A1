@@ -1,3 +1,5 @@
+
+from loguru import logger
 import torch
 import torch.nn as nn
 
@@ -33,6 +35,20 @@ class TransformerLM(nn.Module):
         self.num_heads = num_heads
         self.d_ff = d_ff
         self.rope_theta  = rope_theta
+
+        embedding = vocab_size * d_model
+        # QKV projection + output projection
+        multi_head_attention = d_model * d_model * 3 + d_model * d_model
+        rms_norm = d_model
+        feed_forward_SwiGLU = d_model * d_ff + d_ff * d_model * 2
+        transformer_block = multi_head_attention + rms_norm * 2 + feed_forward_SwiGLU
+        all_transformer_blocks = transformer_block * num_layers
+        linear = d_model * vocab_size
+
+        total_paramters = embedding + all_transformer_blocks + rms_norm + linear
+        logger.info(f"Total number of parameters: {total_paramters/1e6:.2f}M")
+
+        exit(0)
         self.embedding = Embedding(vocab_size, d_model, device)
         # NOTE: Wrapped in nn.ModuleList so PyTorch tracks the weights!
         self.transformer_blocks = nn.ModuleList([
